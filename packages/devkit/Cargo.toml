@@ -5,3 +5,4 @@ edition = "2021"
 description = "Developer toolkit for testing and simulating the Stellar fee tracker"
 
 [dependencies]
+thiserror = "1"
