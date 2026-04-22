@@ -2,7 +2,7 @@
   "scenario": "congested",
   "description": "High-load network: p95 > 100,000 stroops with multiple fee spikes",
   "fee_stats": {
-    "last_ledger": "1000",
+    "last_ledger": "1001",
     "last_ledger_base_fee": "100",
     "ledger_capacity_usage": "0.97",
     "fee_charged": {

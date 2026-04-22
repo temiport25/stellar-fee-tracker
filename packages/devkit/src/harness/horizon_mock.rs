@@ -4,13 +4,16 @@ pub struct HorizonMock {
     pub scenario: String,
     /// Optional simulated response delay in milliseconds.
     pub delay_ms: Option<u64>,
-    /// Optional path to a scenario JSON file to serve at `GET /fee_stats`.
+    /// Optional explicit path to a scenario JSON file. When set, takes precedence
+    /// over the convention-based `src/harness/scenarios/{scenario}.json` path.
     pub scenario_path: Option<std::path::PathBuf>,
+    /// Probability [0.0, 1.0] of returning a 500/503 error response.
+    pub error_rate: f64,
 }
 
 impl HorizonMock {
     pub fn new(scenario: impl Into<String>) -> Self {
-        Self { scenario: scenario.into(), delay_ms: None, scenario_path: None }
+        Self { scenario: scenario.into(), delay_ms: None, scenario_path: None, error_rate: 0.0 }
     }
 
     /// Sets the simulated network latency delay.
@@ -19,9 +22,15 @@ impl HorizonMock {
         self
     }
 
-    /// Sets a file path to load the fee_stats JSON payload from at runtime.
+    /// Sets an explicit path to load scenario JSON from, overriding the convention-based path.
     pub fn with_scenario_path(mut self, path: impl Into<std::path::PathBuf>) -> Self {
         self.scenario_path = Some(path.into());
+        self
+    }
+
+    /// Sets the error injection rate (0.0 = never, 1.0 = always).
+    pub fn with_error_rate(mut self, rate: f64) -> Self {
+        self.error_rate = rate.clamp(0.0, 1.0);
         self
     }
 
@@ -30,6 +39,11 @@ impl HorizonMock {
         if let Some(ms) = self.delay_ms {
             std::thread::sleep(std::time::Duration::from_millis(ms));
         }
+    }
+
+    /// Returns true if this request should be failed based on the configured error rate.
+    pub fn should_inject_error(&self) -> bool {
+        self.error_rate > 0.0 && rand_f64() < self.error_rate
     }
 
     /// Switches to the next scenario from the rotator and updates the active scenario.
@@ -53,10 +67,26 @@ impl HorizonMock {
         format!(r#"{{"status":"ok","scenario":"{}"}}"#, self.scenario)
     }
 
-    /// Loads and returns the scenario JSON from `scenario_path` to be served at `GET /fee_stats`.
-    /// Returns `None` if no `scenario_path` was configured.
-    pub fn fee_stats_payload(&self) -> Option<std::io::Result<String>> {
-        self.scenario_path.as_deref()
-            .map(crate::harness::scenarios::load_from_file)
+    /// Loads and returns the scenario JSON to be served at `GET /fee_stats`.
+    ///
+    /// Uses `scenario_path` if explicitly set; otherwise loads from the
+    /// convention-based path `src/harness/scenarios/{scenario}.json`.
+    pub fn fee_stats_payload(&self) -> std::io::Result<String> {
+        let path = self.scenario_path.clone().unwrap_or_else(|| {
+            std::path::PathBuf::from(format!(
+                "src/harness/scenarios/{}.json",
+                self.scenario
+            ))
+        });
+        crate::harness::scenarios::load_from_file(&path)
     }
+}
+
+/// Minimal pseudo-random float in [0.0, 1.0) using system time as entropy.
+fn rand_f64() -> f64 {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    (nanos % 1_000_000) as f64 / 1_000_000.0
 }

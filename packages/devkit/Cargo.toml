@@ -6,3 +6,6 @@ description = "Developer toolkit for testing and simulating the Stellar fee trac
 
 [dependencies]
 thiserror = "1"
+
+[dev-dependencies]
+serde_json = "1"

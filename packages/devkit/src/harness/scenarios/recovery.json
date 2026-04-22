@@ -2,7 +2,7 @@
   "scenario": "recovery",
   "description": "Post-spike normalisation: fees declining from high back to baseline",
   "fee_stats": {
-    "last_ledger": "1001",
+    "last_ledger": "1003",
     "last_ledger_base_fee": "100",
     "ledger_capacity_usage": "0.45",
     "fee_charged": {
