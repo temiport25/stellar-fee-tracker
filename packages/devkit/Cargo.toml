@@ -1,0 +1,7 @@
+[package]
+name = "stellar-devkit"
+version = "0.1.0"
+edition = "2021"
+description = "Developer toolkit for testing and simulating the Stellar fee tracker"
+
+[dependencies]
