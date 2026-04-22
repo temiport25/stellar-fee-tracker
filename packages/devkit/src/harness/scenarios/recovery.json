@@ -1,0 +1,41 @@
+{
+  "scenario": "recovery",
+  "description": "Post-spike normalisation: fees declining from high back to baseline",
+  "fee_stats": {
+    "last_ledger": "1001",
+    "last_ledger_base_fee": "100",
+    "ledger_capacity_usage": "0.45",
+    "fee_charged": {
+      "max": "50000",
+      "min": "100",
+      "mode": "500",
+      "p10": "100",
+      "p20": "100",
+      "p30": "150",
+      "p40": "200",
+      "p50": "300",
+      "p60": "500",
+      "p70": "1000",
+      "p80": "5000",
+      "p90": "15000",
+      "p95": "30000",
+      "p99": "50000"
+    },
+    "max_fee": {
+      "max": "100000",
+      "min": "100",
+      "mode": "1000",
+      "p10": "100",
+      "p20": "200",
+      "p30": "300",
+      "p40": "500",
+      "p50": "1000",
+      "p60": "2000",
+      "p70": "5000",
+      "p80": "10000",
+      "p90": "25000",
+      "p95": "50000",
+      "p99": "100000"
+    }
+  }
+}
