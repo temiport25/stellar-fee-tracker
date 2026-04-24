@@ -87,6 +87,12 @@ impl FeeModel {
         FeeModel::new(config.clone()).generate(config.ledger_count as usize, 0)
     }
 
+    /// Generate `count` baseline fee values at the Stellar minimum (100 stroops).
+    /// Useful for establishing a no-load reference series.
+    pub fn baseline(count: usize) -> Vec<f64> {
+        vec![100.0; count]
+    }
+
     /// Run multiple scenarios sequentially and return combined output.
     pub fn run_scenarios(configs: &[FeeModelConfig]) -> Vec<FeePoint> {
         let mut all = Vec::new();
