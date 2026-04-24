@@ -39,6 +39,7 @@ mod tests {
             )
     }
 
+    #[allow(dead_code)]
     fn time_window_strategy() -> impl Strategy<Value = TimeWindow> {
         (
             prop::collection::vec("[a-z]+", 1..10).prop_map(|words| words.join("_")),

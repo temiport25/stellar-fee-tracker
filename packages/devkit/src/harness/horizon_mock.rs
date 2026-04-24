@@ -64,7 +64,7 @@ impl HorizonMock {
 
     /// Switches to the next scenario from the rotator and updates the active scenario.
     pub fn rotate(&mut self, rotator: &mut crate::harness::scenarios::ScenarioRotator) {
-        if let Some(next) = rotator.next() {
+        if let Some(next) = rotator.advance() {
             self.scenario = next.to_string();
         }
     }

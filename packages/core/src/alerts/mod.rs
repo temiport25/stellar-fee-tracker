@@ -64,7 +64,7 @@ impl AlertManager {
                 peak_fee: spike.peak_fee,
                 baseline_fee: spike.baseline_fee,
                 spike_ratio: spike.spike_ratio,
-                start_time: spike.start_time.clone(),
+                start_time: spike.start_time,
                 duration_seconds: spike.duration.num_seconds().max(0),
                 network: self.network.clone(),
                 timestamp: Utc::now(),

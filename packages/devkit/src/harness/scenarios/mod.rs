@@ -15,11 +15,14 @@ pub struct ScenarioRotator {
 
 impl ScenarioRotator {
     pub fn new(scenarios: Vec<String>) -> Self {
-        Self { scenarios, index: 0 }
+        Self {
+            scenarios,
+            index: 0,
+        }
     }
 
     /// Returns the current scenario name and advances to the next.
-    pub fn next(&mut self) -> Option<&str> {
+    pub fn advance(&mut self) -> Option<&str> {
         if self.scenarios.is_empty() {
             return None;
         }

@@ -206,7 +206,7 @@ impl CongestionDetector {
 
         // Sort fees by timestamp to process in chronological order
         let mut sorted_fees = fees.to_vec();
-        sorted_fees.sort_by(|a, b| a.timestamp.cmp(&b.timestamp));
+        sorted_fees.sort_by_key(|a| a.timestamp);
 
         let mut current_spike: Option<FeeSpike> = None;
 

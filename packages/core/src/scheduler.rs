@@ -98,6 +98,7 @@ pub async fn run_fee_polling_with_retry(
 }
 
 /// Execute a single poll cycle with retry and optional persistence.
+#[allow(clippy::too_many_arguments)]
 async fn poll_once(
     horizon_provider: &Arc<dyn FeeDataProvider + Send + Sync>,
     history_store: &Arc<RwLock<FeeHistoryStore>>,

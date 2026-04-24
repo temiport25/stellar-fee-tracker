@@ -260,22 +260,26 @@ mod tests {
         let json = r#"{
             "min": "100",
             "max": "5000",
-            "avg": "213",
+            "mode": "213",
             "p10": "100",
-            "p25": "100",
+            "p20": "100",
+            "p30": "120",
+            "p40": "130",
             "p50": "150",
-            "p75": "300",
+            "p60": "200",
+            "p70": "250",
+            "p80": "300",
             "p90": "500",
-            "p95": "800"
+            "p95": "800",
+            "p99": "1000"
         }"#;
         let fc: FeeCharged = serde_json::from_str(json).unwrap();
         assert_eq!(fc.min, "100");
         assert_eq!(fc.max, "5000");
         assert_eq!(fc.avg, "213");
         assert_eq!(fc.p10, "100");
-        assert_eq!(fc.p25, "100");
         assert_eq!(fc.p50, "150");
-        assert_eq!(fc.p75, "300");
+        assert_eq!(fc.p80, "300");
         assert_eq!(fc.p90, "500");
         assert_eq!(fc.p95, "800");
     }
@@ -287,13 +291,18 @@ mod tests {
             "fee_charged": {
                 "min": "100",
                 "max": "5000",
-                "avg": "213",
+                "mode": "213",
                 "p10": "100",
-                "p25": "100",
+                "p20": "100",
+                "p30": "120",
+                "p40": "130",
                 "p50": "150",
-                "p75": "300",
+                "p60": "200",
+                "p70": "250",
+                "p80": "300",
                 "p90": "500",
-                "p95": "800"
+                "p95": "800",
+                "p99": "1000"
             }
         }"#;
         let stats: HorizonFeeStats = serde_json::from_str(json).unwrap();

@@ -6,6 +6,7 @@ description = "Developer toolkit for testing and simulating the Stellar fee trac
 
 [dependencies]
 axum = "0.7"
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

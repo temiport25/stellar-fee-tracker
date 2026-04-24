@@ -42,6 +42,7 @@ impl<T> CircularBuffer<T> {
 
 /// Calculator for rolling averages across multiple time windows
 pub struct RollingAverageCalculator {
+    #[allow(dead_code)]
     config: AverageConfig,
     windows: HashMap<TimeWindow, CircularBuffer<FeeDataPoint>>,
     time_windows: Vec<TimeWindow>,
