@@ -21,28 +21,12 @@ impl HorizonClient {
     pub fn base_url(&self) -> &str {
         &self.base_url
     }
-}
 
-#[derive(Debug, Deserialize)]
-pub struct HorizonTransaction {
-    pub hash: String,
-    pub successful: bool,
-    pub fee_charged: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct HorizonOperation {
-    #[serde(rename = "type")]
-    pub op_type: String,
-
-    pub from: Option<String>,
-    pub to: Option<String>,
-
-    pub asset_type: Option<String>,
-    pub asset_code: Option<String>,
-    pub asset_issuer: Option<String>,
-
-    pub amount: Option<String>,
+    /// Expose the shared HTTP client for adapters that need to make
+    /// additional requests (e.g. `HorizonFeeDataProvider`).
+    pub(crate) fn http_client(&self) -> &Client {
+        &self.http
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -55,7 +39,8 @@ pub struct HorizonFeeStats {
 pub struct FeeCharged {
     pub min: String,
     pub max: String,
-    #[serde(rename = "mode")]
+    /// The arithmetic mean fee charged across all transactions in the ledger.
+    /// Horizon exposes this as `"avg"` in the fee_stats response.
     pub avg: String,
     pub p10: String,
     pub p20: String,
@@ -97,100 +82,9 @@ impl HorizonClient {
     }
 }
 
-/// Wrapper structs for deserialising Horizon's `_embedded.records` envelope.
-#[derive(Debug, Deserialize)]
-struct HorizonTransactionResponse {
-    #[serde(rename = "_embedded")]
-    embedded: HorizonTransactionEmbedded,
-}
-
-#[derive(Debug, Deserialize)]
-struct HorizonTransactionEmbedded {
-    records: Vec<HorizonTransaction>,
-}
-
-#[derive(Debug, Deserialize)]
-struct HorizonOperationsResponse {
-    #[serde(rename = "_embedded")]
-    embedded: HorizonOperationsEmbedded,
-}
-
-#[derive(Debug, Deserialize)]
-struct HorizonOperationsEmbedded {
-    records: Vec<HorizonOperation>,
-}
-
-impl HorizonClient {
-    /// Fetch the single most recent transaction from Horizon.
-    ///
-    /// Calls `GET {base_url}/transactions?order=desc&limit=1` and returns
-    /// the first record. Returns `AppError::Parse` if Horizon returns an
-    /// empty records array.
-    pub async fn fetch_latest_transaction(&self) -> Result<HorizonTransaction, AppError> {
-        let url = format!("{}/transactions?order=desc&limit=1", self.base_url);
-
-        let response = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| AppError::Network(e.to_string()))?;
-
-        if !response.status().is_success() {
-            return Err(AppError::Network(format!(
-                "Horizon returned HTTP {}",
-                response.status()
-            )));
-        }
-
-        let body = response
-            .json::<HorizonTransactionResponse>()
-            .await
-            .map_err(|e| AppError::Parse(e.to_string()))?;
-
-        body.embedded
-            .records
-            .into_iter()
-            .next()
-            .ok_or_else(|| AppError::Parse("Horizon returned empty transaction records".into()))
-    }
-
-    /// Fetch all operations for a given transaction hash.
-    ///
-    /// Calls `GET {base_url}/transactions/{tx_hash}/operations` and returns
-    /// the full records vec (may be empty for transactions with no operations).
-    pub async fn fetch_operations(&self, tx_hash: &str) -> Result<Vec<HorizonOperation>, AppError> {
-        let url = format!("{}/transactions/{}/operations", self.base_url, tx_hash);
-
-        let response = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| AppError::Network(e.to_string()))?;
-
-        if !response.status().is_success() {
-            return Err(AppError::Network(format!(
-                "Horizon returned HTTP {}",
-                response.status()
-            )));
-        }
-
-        let body = response
-            .json::<HorizonOperationsResponse>()
-            .await
-            .map_err(|e| AppError::Parse(e.to_string()))?;
-
-        Ok(body.embedded.records)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    // These tests verify the error path logic only.
-    // Integration tests against a real/mock HTTP server live in Issue #23.
 
     #[test]
     fn horizon_client_base_url_is_stored() {
@@ -199,68 +93,11 @@ mod tests {
     }
 
     #[test]
-    fn horizon_transaction_deserialises_from_json() {
-        let json = r#"{"hash":"abc123","successful":true,"fee_charged":"100"}"#;
-        let tx: HorizonTransaction = serde_json::from_str(json).unwrap();
-        assert_eq!(tx.hash, "abc123");
-        assert!(tx.successful);
-        assert_eq!(tx.fee_charged, "100");
-    }
-
-    #[test]
-    fn horizon_operation_deserialises_from_json() {
-        let json = r#"{"type":"payment","from":"GA","to":"GB","asset_type":null,"asset_code":null,"asset_issuer":null,"amount":"50.0"}"#;
-        let op: HorizonOperation = serde_json::from_str(json).unwrap();
-        assert_eq!(op.op_type, "payment");
-        assert_eq!(op.from.as_deref(), Some("GA"));
-        assert_eq!(op.amount.as_deref(), Some("50.0"));
-    }
-
-    #[test]
-    fn transaction_response_wrapper_deserialises() {
-        let json = r#"{
-            "_embedded": {
-                "records": [
-                    {"hash":"tx1","successful":true,"fee_charged":"200"}
-                ]
-            }
-        }"#;
-        let resp: HorizonTransactionResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(resp.embedded.records.len(), 1);
-        assert_eq!(resp.embedded.records[0].hash, "tx1");
-    }
-
-    #[test]
-    fn empty_transaction_records_would_return_parse_error() {
-        // Verify that an empty records vec produces None from next(),
-        // which our impl maps to AppError::Parse.
-        let records: Vec<HorizonTransaction> = vec![];
-        let result = records.into_iter().next();
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn operations_response_wrapper_deserialises() {
-        let json = r#"{
-            "_embedded": {
-                "records": [
-                    {"type":"payment","from":"GA","to":"GB","asset_type":null,"asset_code":null,"asset_issuer":null,"amount":"10.0"},
-                    {"type":"create_account","from":null,"to":"GC","asset_type":null,"asset_code":null,"asset_issuer":null,"amount":null}
-                ]
-            }
-        }"#;
-        let resp: HorizonOperationsResponse = serde_json::from_str(json).unwrap();
-        assert_eq!(resp.embedded.records.len(), 2);
-        assert_eq!(resp.embedded.records[0].op_type, "payment");
-        assert_eq!(resp.embedded.records[1].op_type, "create_account");
-    }
-
-    #[test]
     fn fee_charged_deserialises_all_percentile_fields() {
         let json = r#"{
             "min": "100",
             "max": "5000",
-            "mode": "213",
+            "avg": "213",
             "p10": "100",
             "p20": "100",
             "p30": "120",
@@ -297,7 +134,7 @@ mod tests {
             "fee_charged": {
                 "min": "100",
                 "max": "5000",
-                "mode": "213",
+                "avg": "213",
                 "p10": "100",
                 "p20": "100",
                 "p30": "120",
@@ -313,6 +150,7 @@ mod tests {
         }"#;
         let stats: HorizonFeeStats = serde_json::from_str(json).unwrap();
         assert_eq!(stats.last_ledger_base_fee, "100");
+        assert_eq!(stats.fee_charged.avg, "213");
         assert_eq!(stats.fee_charged.p50, "150");
         assert_eq!(stats.fee_charged.p95, "800");
         assert_eq!(stats.fee_charged.p99, "1200");

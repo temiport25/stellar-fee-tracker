@@ -24,31 +24,7 @@ use crate::metrics::AppMetrics;
 use crate::repository::FeeRepository;
 use crate::store::FeeHistoryStore;
 
-/// Run the fee polling loop until Ctrl+C is received.
-/// Uses defaults for retry and retention — prefer `run_fee_polling_with_retry` in production.
-pub async fn run_fee_polling(
-    horizon_provider: Arc<dyn FeeDataProvider + Send + Sync>,
-    history_store: Arc<RwLock<FeeHistoryStore>>,
-    insights_engine: Arc<RwLock<FeeInsightsEngine>>,
-    poll_interval_seconds: u64,
-    alert_manager: Option<Arc<AlertManager>>,
-) {
-    run_fee_polling_with_retry(
-        horizon_provider,
-        history_store,
-        insights_engine,
-        poll_interval_seconds,
-        3,
-        1000,
-        None,
-        7,
-        None,
-        alert_manager,
-    )
-    .await
-}
-
-/// Full version with configurable retry parameters and optional DB persistence.
+/// Full polling loop with configurable retry parameters and optional DB persistence.
 #[allow(clippy::too_many_arguments)]
 pub async fn run_fee_polling_with_retry(
     horizon_provider: Arc<dyn FeeDataProvider + Send + Sync>,

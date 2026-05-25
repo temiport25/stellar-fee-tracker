@@ -8,9 +8,13 @@
 //! (`text/plain; version=0.0.4`). The endpoint is intentionally excluded
 //! from API-key auth so it can be scraped by Prometheus / Grafana agents.
 
-use prometheus::{Counter, CounterVec, Gauge, Histogram, HistogramOpts, Opts, Registry};
+use prometheus::{Counter, Gauge, Opts, Registry};
 
 /// All application-level Prometheus metrics.
+///
+/// Only metrics that are actively incremented are registered here.
+/// Registering metrics that are never written produces misleading zeros
+/// in Prometheus/Grafana dashboards.
 pub struct AppMetrics {
     /// Total number of Horizon polling attempts (success + failure).
     pub polls_total: Counter,
@@ -22,10 +26,6 @@ pub struct AppMetrics {
     pub current_avg_fee: Gauge,
     /// Total number of fee spikes detected by the insights engine.
     pub spikes_detected_total: Counter,
-    /// HTTP request count, labelled by method, path, and status code.
-    pub http_requests_total: CounterVec,
-    /// HTTP request latency histogram in seconds.
-    pub http_request_duration: Histogram,
     /// The registry that owns all of the above metrics.
     pub registry: Registry,
 }
@@ -61,31 +61,11 @@ impl AppMetrics {
             "Total fee spikes detected",
         ))?;
 
-        let http_requests_total = CounterVec::new(
-            Opts::new(
-                "stellar_fee_tracker_http_requests_total",
-                "HTTP requests by method, path, and status",
-            ),
-            &["method", "path", "status"],
-        )?;
-
-        let http_request_duration = Histogram::with_opts(
-            HistogramOpts::new(
-                "stellar_fee_tracker_http_request_duration_seconds",
-                "HTTP request latency in seconds",
-            )
-            .buckets(vec![
-                0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0,
-            ]),
-        )?;
-
         registry.register(Box::new(polls_total.clone()))?;
         registry.register(Box::new(poll_errors_total.clone()))?;
         registry.register(Box::new(fee_points_stored.clone()))?;
         registry.register(Box::new(current_avg_fee.clone()))?;
         registry.register(Box::new(spikes_detected_total.clone()))?;
-        registry.register(Box::new(http_requests_total.clone()))?;
-        registry.register(Box::new(http_request_duration.clone()))?;
 
         Ok(Self {
             polls_total,
@@ -93,8 +73,6 @@ impl AppMetrics {
             fee_points_stored,
             current_avg_fee,
             spikes_detected_total,
-            http_requests_total,
-            http_request_duration,
             registry,
         })
     }
@@ -148,19 +126,6 @@ mod tests {
         assert!((metrics.fee_points_stored.get() - 42.0).abs() < f64::EPSILON);
     }
 
-    #[test]
-    fn http_requests_counter_vec_labels_work() {
-        let metrics = AppMetrics::new().unwrap();
-        metrics
-            .http_requests_total
-            .with_label_values(&["GET", "/fees/current", "200"])
-            .inc();
-        let val = metrics
-            .http_requests_total
-            .with_label_values(&["GET", "/fees/current", "200"])
-            .get();
-        assert!((val - 1.0).abs() < f64::EPSILON);
-    }
 }
 
 #[cfg(test)]
@@ -243,11 +208,6 @@ mod integration_tests {
         metrics.fee_points_stored.set(10.0);
         metrics.current_avg_fee.set(150.5);
         metrics.spikes_detected_total.inc();
-        metrics
-            .http_requests_total
-            .with_label_values(&["GET", "/fees/current", "200"])
-            .inc();
-        metrics.http_request_duration.observe(0.042);
 
         let req = Request::builder()
             .method(Method::GET)
@@ -263,8 +223,6 @@ mod integration_tests {
         assert!(body.contains("stellar_fee_tracker_fee_points_stored"));
         assert!(body.contains("stellar_fee_tracker_current_avg_fee"));
         assert!(body.contains("stellar_fee_tracker_spikes_detected_total"));
-        assert!(body.contains("stellar_fee_tracker_http_requests_total"));
-        assert!(body.contains("stellar_fee_tracker_http_request_duration_seconds"));
     }
 
     #[tokio::test]

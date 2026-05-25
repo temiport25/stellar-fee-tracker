@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(STELLAR_NETWORK=testnet POLL_INTERVAL_SECONDS=30 DATABASE_URL=sqlite://stellar_fees.db ALLOWED_ORIGINS=http://localhost:3000 ../../target/debug/stellar-fee-tracker)",
+      "Bash(echo \"PID: $!\")",
+      "Read(//private/tmp/**)"
+    ]
+  }
+}

@@ -1,6 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::{
     extract::{connect_info::ConnectInfo, Request, State},
@@ -94,12 +94,25 @@ impl RateLimitState {
     }
 }
 
+/// Remove token buckets that have not been refilled in the last 2 minutes.
+/// Called probabilistically to avoid taking a write lock on every request.
+fn evict_stale_buckets(state: &RateLimitState) {
+    // 2× the typical replenish window gives every IP a fair grace period.
+    let cutoff = Instant::now() - Duration::from_secs(120);
+    state.buckets.retain(|_, bucket| bucket.last_refill >= cutoff);
+}
+
 pub async fn enforce_rate_limit(
     State(state): State<Arc<RateLimitState>>,
     request: Request,
     next: Next,
 ) -> Response {
     let client_ip = extract_client_ip(&request);
+
+    // Evict stale entries once the map grows large (probabilistic amortisation).
+    if state.buckets.len() > 10_000 {
+        evict_stale_buckets(&state);
+    }
 
     let (allowed, remaining, reset_secs, retry_after_secs) = {
         let mut bucket = state
@@ -134,18 +147,29 @@ pub async fn enforce_rate_limit(
 }
 
 fn extract_client_ip(request: &Request) -> IpAddr {
-    request
-        .headers()
-        .get(X_FORWARDED_FOR_HEADER)
-        .and_then(|value| value.to_str().ok())
-        .and_then(parse_x_forwarded_for)
-        .or_else(|| {
-            request
-                .extensions()
-                .get::<ConnectInfo<SocketAddr>>()
-                .map(|ConnectInfo(addr)| addr.ip())
-        })
-        .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
+    // Determine the direct TCP peer address first.
+    let peer_ip = request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(addr)| addr.ip());
+
+    // Only honour X-Forwarded-For when the connection arrives from a trusted
+    // proxy (localhost), so an attacker cannot spoof their IP to bypass the
+    // per-IP rate limit by simply setting this header.
+    let from_trusted_proxy = peer_ip.map_or(false, |ip| ip.is_loopback());
+
+    if from_trusted_proxy {
+        if let Some(forwarded_ip) = request
+            .headers()
+            .get(X_FORWARDED_FOR_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .and_then(parse_x_forwarded_for)
+        {
+            return forwarded_ip;
+        }
+    }
+
+    peer_ip.unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED))
 }
 
 fn parse_x_forwarded_for(value: &str) -> Option<IpAddr> {
@@ -286,16 +310,48 @@ mod tests {
 
     #[tokio::test]
     async fn different_ips_have_independent_buckets() {
+        // Use real socket addresses so each client has its own bucket.
+        // X-Forwarded-For is no longer trusted from non-loopback peers.
         let app = build_test_app(Arc::new(RateLimitState::new(1)));
+        let addr_a: SocketAddr = "192.0.2.11:40000".parse().unwrap();
+        let addr_b: SocketAddr = "192.0.2.12:40001".parse().unwrap();
 
-        let first_a = request_from_ip(&app, "192.0.2.11").await;
+        let first_a = request_with_connect_info(&app, addr_a).await;
         assert_eq!(first_a.status(), StatusCode::OK);
 
-        let second_a = request_from_ip(&app, "192.0.2.11").await;
+        let second_a = request_with_connect_info(&app, addr_a).await;
         assert_eq!(second_a.status(), StatusCode::TOO_MANY_REQUESTS);
 
-        let first_b = request_from_ip(&app, "192.0.2.12").await;
+        let first_b = request_with_connect_info(&app, addr_b).await;
         assert_eq!(first_b.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn xff_is_trusted_when_connection_is_from_loopback() {
+        // Simulate a reverse-proxy running on localhost forwarding the real client IP.
+        let app = build_test_app(Arc::new(RateLimitState::new(1)));
+        let loopback_proxy: SocketAddr = "127.0.0.1:80".parse().unwrap();
+
+        // Two requests from the same real client (via XFF), coming through loopback proxy.
+        let mut req1 = Request::builder()
+            .uri("/test")
+            .header(X_FORWARDED_FOR_HEADER, "203.0.113.99")
+            .body(Body::empty())
+            .unwrap();
+        req1.extensions_mut().insert(ConnectInfo(loopback_proxy));
+
+        let mut req2 = Request::builder()
+            .uri("/test")
+            .header(X_FORWARDED_FOR_HEADER, "203.0.113.99")
+            .body(Body::empty())
+            .unwrap();
+        req2.extensions_mut().insert(ConnectInfo(loopback_proxy));
+
+        let first = app.clone().oneshot(req1).await.unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+
+        let second = app.clone().oneshot(req2).await.unwrap();
+        assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[tokio::test]

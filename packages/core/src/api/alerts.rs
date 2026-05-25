@@ -48,6 +48,64 @@ fn is_valid_threshold(t: &str) -> bool {
     VALID_THRESHOLDS.contains(&t)
 }
 
+/// Validate that a webhook URL is safe to call:
+/// - Must use HTTPS.
+/// - Host must not be a loopback, link-local, or private-range IP (SSRF guard).
+/// - Must have a non-empty hostname.
+fn is_safe_webhook_url(url: &str) -> bool {
+    use std::net::IpAddr;
+
+    // Must start with https://
+    if !url.starts_with("https://") {
+        return false;
+    }
+
+    // Extract the host portion (after the scheme, before path/query/port).
+    let after_scheme = &url["https://".len()..];
+    let host_and_maybe_port = after_scheme.split('/').next().unwrap_or("");
+    // Strip optional port.
+    let host = host_and_maybe_port.split(':').next().unwrap_or("").trim();
+
+    if host.is_empty() {
+        return false;
+    }
+
+    // Reject well-known loopback hostnames.
+    if matches!(host, "localhost" | "ip6-localhost" | "ip6-loopback") {
+        return false;
+    }
+
+    // If the host is an IP address, reject private / loopback / link-local ranges.
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        match ip {
+            IpAddr::V4(v4) => {
+                if v4.is_loopback()
+                    || v4.is_private()
+                    || v4.is_link_local()
+                    || v4.is_unspecified()
+                    || v4.is_broadcast()
+                {
+                    return false;
+                }
+            }
+            IpAddr::V6(v6) => {
+                if v6.is_loopback() || v6.is_unspecified() || v6.is_multicast() {
+                    return false;
+                }
+            }
+        }
+    }
+
+    // Catch bare numeric prefixes for common internal ranges not covered above.
+    if host.starts_with("169.254.") // link-local / AWS metadata
+        || host.starts_with("100.64.")  // shared address space (RFC 6598)
+    {
+        return false;
+    }
+
+    true
+}
+
 // ---- Handlers ----
 
 /// `POST /alerts/config` — register a new webhook target.
@@ -66,6 +124,15 @@ pub async fn create_alert(
                     threshold,
                     VALID_THRESHOLDS.join(", ")
                 )
+            })),
+        ));
+    }
+
+    if !is_safe_webhook_url(&body.webhook_url) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "Invalid webhook_url: must be an HTTPS URL with a public hostname"
             })),
         ));
     }

@@ -115,7 +115,10 @@ fn not_modified_response(
         .header(header::ETAG, etag)
         .header(header::LAST_MODIFIED, last_modified_value)
         .body(Body::empty())
-        .expect("304 response should be valid")
+        .unwrap_or_else(|err| {
+            tracing::error!("Failed to build 304 response: {}", err);
+            Response::new(Body::empty())
+        })
 }
 
 fn json_cache_response(
@@ -132,32 +135,32 @@ fn json_cache_response(
         .header(header::ETAG, etag)
         .header(header::LAST_MODIFIED, last_modified_value)
         .body(Body::from(body))
-        .expect("cached response should be valid")
+        .unwrap_or_else(|err| {
+            tracing::error!("Failed to build JSON cache response: {}", err);
+            Response::new(Body::empty())
+        })
 }
 
 pub async fn current_fees(
     State(state): State<FeesState>,
     request_headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let cached = {
-        let cache = state.fee_cache.lock().await;
-        if cache.is_fresh() {
-            cache.get()
-        } else {
-            None
-        }
-    };
-    let payload = if let Some(cached) = cached {
-        cached
+    // Hold the lock across both the staleness check and the cache write to
+    // prevent a thundering-herd where multiple concurrent requests all see a
+    // stale cache and all fire upstream fetches simultaneously.
+    // tokio::sync::Mutex is safe to hold across .await points.
+    let mut cache = state.fee_cache.lock().await;
+    let payload = if cache.is_fresh() {
+        cache.get().expect("cache freshness invariant violated: is_fresh() but get() is None")
     } else {
         let provider = state.fee_stats_provider.as_ref().ok_or_else(|| {
             AppError::Config("Fee stats provider missing from fees state".to_string())
         })?;
         let fresh = provider.fetch_current_fees().await?;
-        let mut cache = state.fee_cache.lock().await;
         cache.set(fresh.clone());
         fresh
     };
+    drop(cache);
 
     let body = serde_json::to_vec(&payload).map_err(|err| AppError::Parse(err.to_string()))?;
     let etag = compute_etag(&body);
@@ -331,12 +334,17 @@ pub async fn fee_trend(State(state): State<FeesState>) -> Result<Json<FeeTrendRe
         .ok_or_else(|| AppError::Config("Insights engine missing from fees state".to_string()))?;
     let insights = engine.read().await.get_current_insights();
     let averages = &insights.rolling_averages;
-    let current_avg = averages.short_term.value;
 
+    // Compare each window against the next-longer baseline:
+    //  1h_pct  = (short_term − medium_term) / medium_term → how much the last 1h
+    //            deviates from the 6h trend.
+    //  6h_pct  = (medium_term − long_term) / long_term    → how much the last 6h
+    //            deviates from the 24h trend.
+    //  24h_pct = None; we have no longer-window baseline to compare against.
     let changes = TrendChanges {
-        one_h_pct: percent_change(current_avg, &averages.short_term),
-        six_h_pct: percent_change(current_avg, &averages.medium_term),
-        twenty_four_h_pct: percent_change(current_avg, &averages.long_term),
+        one_h_pct: percent_change(averages.short_term.value, &averages.medium_term),
+        six_h_pct: percent_change(averages.medium_term.value, &averages.long_term),
+        twenty_four_h_pct: None,
     };
 
     Ok(Json(FeeTrendResponse {
@@ -529,6 +537,7 @@ mod tests {
         assert_eq!(json["percentiles"]["p10"], "100");
         assert_eq!(json["percentiles"]["p50"], "150");
         assert_eq!(json["percentiles"]["p95"], "800");
+        assert_eq!(json["percentiles"]["p99"], "1200");
     }
 
     #[test]

@@ -38,6 +38,29 @@ impl AlertManager {
             return;
         };
 
+        // Build the set of IDs that are still active in the congestion window.
+        // Prune `seen_spikes` to those IDs so the set stays bounded by the
+        // size of `recent_spikes` (which the detector already caps at 1 000).
+        let active_ids: HashSet<String> = update
+            .insights
+            .congestion_trends
+            .recent_spikes
+            .iter()
+            .map(|s| {
+                format!(
+                    "{}:{}:{}",
+                    severity_to_str(&s.severity),
+                    s.start_time.timestamp(),
+                    s.peak_fee
+                )
+            })
+            .collect();
+
+        {
+            let mut seen = self.seen_spikes.lock().await;
+            seen.retain(|id| active_ids.contains(id));
+        }
+
         for spike in &update.insights.congestion_trends.recent_spikes {
             if !meets_threshold(&spike.severity, &self.alert_threshold) {
                 continue;

@@ -12,10 +12,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 
 use crate::insights::types::FeeDataPoint;
-use crate::services::horizon::HorizonFeeStats;
 
 /// Valid threshold values for alert configurations.
-pub const VALID_THRESHOLDS: &[&str] = &["Minor", "Major", "Critical"];
+/// Must match the `SpikeSeverity` enum variants used by the insights engine.
+pub const VALID_THRESHOLDS: &[&str] = &["Minor", "Moderate", "Major", "Critical"];
 
 /// A single alert webhook configuration row.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -103,14 +103,38 @@ impl FeeRepository {
             .into_iter()
             .filter_map(|row| {
                 use sqlx::Row;
-                let fee_amount: i64 = row.try_get("fee_amount").ok()?;
-                let timestamp_str: String = row.try_get("timestamp").ok()?;
-                let transaction_hash: String = row.try_get("transaction_hash").ok()?;
-                let ledger_sequence: i64 = row.try_get("ledger_sequence").ok()?;
+                macro_rules! col {
+                    ($col:literal, $T:ty) => {
+                        match row.try_get::<$T, _>($col) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                tracing::error!(
+                                    "fee_data_points row decode error (column {}): {}",
+                                    $col,
+                                    e
+                                );
+                                return None;
+                            }
+                        }
+                    };
+                }
 
-                let timestamp = DateTime::parse_from_rfc3339(&timestamp_str)
-                    .ok()?
-                    .with_timezone(&Utc);
+                let fee_amount: i64 = col!("fee_amount", i64);
+                let timestamp_str: String = col!("timestamp", String);
+                let transaction_hash: String = col!("transaction_hash", String);
+                let ledger_sequence: i64 = col!("ledger_sequence", i64);
+
+                let timestamp = match DateTime::parse_from_rfc3339(&timestamp_str) {
+                    Ok(ts) => ts.with_timezone(&Utc),
+                    Err(e) => {
+                        tracing::error!(
+                            "fee_data_points row: invalid timestamp '{}': {}",
+                            timestamp_str,
+                            e
+                        );
+                        return None;
+                    }
+                };
 
                 Some(FeeDataPoint {
                     fee_amount: fee_amount as u64,
@@ -122,25 +146,6 @@ impl FeeRepository {
             .collect();
 
         Ok(points)
-    }
-
-    /// Insert a fee snapshot (point-in-time Horizon fee_stats capture).
-    pub async fn insert_snapshot(&self, snapshot: &HorizonFeeStats) -> Result<(), sqlx::Error> {
-        let captured_at = Utc::now().to_rfc3339();
-
-        sqlx::query(
-            "INSERT INTO fee_snapshots (base_fee, min_fee, max_fee, avg_fee, captured_at)
-             VALUES (?, ?, ?, ?, ?)",
-        )
-        .bind(&snapshot.last_ledger_base_fee)
-        .bind(&snapshot.fee_charged.min)
-        .bind(&snapshot.fee_charged.max)
-        .bind(&snapshot.fee_charged.avg)
-        .bind(&captured_at)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
     }
 
     /// Delete all fee_data_points with timestamp older than `cutoff`.
@@ -186,11 +191,27 @@ impl FeeRepository {
             .into_iter()
             .filter_map(|row| {
                 use sqlx::Row;
-                let id: i64 = row.try_get("id").ok()?;
-                let webhook_url: String = row.try_get("webhook_url").ok()?;
-                let threshold: String = row.try_get("threshold").ok()?;
-                let enabled: i64 = row.try_get("enabled").ok()?;
-                let created_at: String = row.try_get("created_at").ok()?;
+                macro_rules! col {
+                    ($col:literal, $T:ty) => {
+                        match row.try_get::<$T, _>($col) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                tracing::error!(
+                                    "alert_configs row decode error (column {}): {}",
+                                    $col,
+                                    e
+                                );
+                                return None;
+                            }
+                        }
+                    };
+                }
+
+                let id: i64 = col!("id", i64);
+                let webhook_url: String = col!("webhook_url", String);
+                let threshold: String = col!("threshold", String);
+                let enabled: i64 = col!("enabled", i64);
+                let created_at: String = col!("created_at", String);
 
                 Some(AlertConfig {
                     id,
@@ -316,15 +337,31 @@ impl FeeRepository {
             .into_iter()
             .filter_map(|row| {
                 use sqlx::Row;
-                let id: i64 = row.try_get("id").ok()?;
-                let config_id: Option<i64> = row.try_get("config_id").ok()?;
-                let severity: String = row.try_get("severity").ok()?;
-                let peak_fee: i64 = row.try_get("peak_fee").ok()?;
-                let baseline_fee: f64 = row.try_get("baseline_fee").ok()?;
-                let spike_ratio: f64 = row.try_get("spike_ratio").ok()?;
-                let webhook_url: String = row.try_get("webhook_url").ok()?;
-                let delivered: i64 = row.try_get("delivered").ok()?;
-                let triggered_at: String = row.try_get("triggered_at").ok()?;
+                macro_rules! col {
+                    ($col:literal, $T:ty) => {
+                        match row.try_get::<$T, _>($col) {
+                            Ok(v) => v,
+                            Err(e) => {
+                                tracing::error!(
+                                    "alert_events row decode error (column {}): {}",
+                                    $col,
+                                    e
+                                );
+                                return None;
+                            }
+                        }
+                    };
+                }
+
+                let id: i64 = col!("id", i64);
+                let config_id: Option<i64> = col!("config_id", Option<i64>);
+                let severity: String = col!("severity", String);
+                let peak_fee: i64 = col!("peak_fee", i64);
+                let baseline_fee: f64 = col!("baseline_fee", f64);
+                let spike_ratio: f64 = col!("spike_ratio", f64);
+                let webhook_url: String = col!("webhook_url", String);
+                let delivered: i64 = col!("delivered", i64);
+                let triggered_at: String = col!("triggered_at", String);
 
                 Some(AlertEvent {
                     id: Some(id),
@@ -375,7 +412,10 @@ impl FeeRepository {
         };
 
         use sqlx::Row;
-        let count: i64 = row.try_get("cnt").unwrap_or(0);
+        let count: i64 = row.try_get("cnt").map_err(|e| {
+            tracing::error!("Failed to decode COUNT(*) result from alert_events: {}", e);
+            e
+        })?;
         Ok(count)
     }
 }
@@ -386,7 +426,6 @@ mod tests {
     use chrono::Duration;
 
     use crate::db::create_pool;
-    use crate::services::horizon::FeeCharged;
 
     async fn make_repo() -> FeeRepository {
         let pool = create_pool("sqlite::memory:").await.unwrap();
@@ -482,33 +521,6 @@ mod tests {
         let deleted = repo.prune_older_than(cutoff).await.unwrap();
 
         assert_eq!(deleted, 0);
-    }
-
-    #[tokio::test]
-    async fn insert_snapshot_succeeds() {
-        let repo = make_repo().await;
-        let stats = HorizonFeeStats {
-            last_ledger_base_fee: "100".into(),
-            fee_charged: FeeCharged {
-                min: "100".into(),
-                max: "5000".into(),
-                avg: "213".into(),
-                p10: "100".into(),
-                p20: "100".into(),
-                p30: "120".into(),
-                p40: "140".into(),
-                p50: "150".into(),
-                p60: "200".into(),
-                p70: "300".into(),
-                p80: "400".into(),
-                p90: "500".into(),
-                p95: "800".into(),
-                p99: "1200".into(),
-            },
-        };
-
-        let result = repo.insert_snapshot(&stats).await;
-        assert!(result.is_ok());
     }
 
     #[tokio::test]

@@ -1,7 +1,3 @@
-// These modules contain scaffolding that will be wired up in subsequent issues.
-// Suppress dead-code warnings until then rather than deleting valid future code.
-#![allow(dead_code)]
-
 mod alerts;
 mod api;
 mod cache;
@@ -143,10 +139,21 @@ async fn main() {
     let rate_limit_state = Arc::new(RateLimitState::new(config.rate_limit_per_minute));
 
     // ---- CORS policy ----
+    // Log and skip invalid origins rather than panicking at startup.
     let origins: Vec<axum::http::HeaderValue> = config
         .allowed_origins
         .iter()
-        .map(|o| o.parse().expect("Invalid origin in ALLOWED_ORIGINS"))
+        .filter_map(|o| match o.parse() {
+            Ok(v) => Some(v),
+            Err(err) => {
+                tracing::warn!(
+                    "Skipping invalid ALLOWED_ORIGINS entry '{}': {}",
+                    o,
+                    err
+                );
+                None
+            }
+        })
         .collect();
 
     let cors = CorsLayer::new()
@@ -174,9 +181,17 @@ async fn main() {
         .max_age(Duration::from_secs(3600));
 
     // ---- Axum router ----
+    //
+    // Route tiers (from least to most restricted):
+    //
+    //  /health   — no rate limit, no auth (must always respond for load-balancer probes)
+    //  /metrics  — rate limited, NO API-key auth (must be scrapeable by Prometheus agents)
+    //  all else  — rate limited + optional API-key auth
+    //
     // fees routes get shared state (Horizon client, store, insights engine)
     // insights routes get Arc<RwLock<FeeInsightsEngine>> as their own state
     // Both sub-routers are Router<()> after with_state, so merge works fine
+
     let fees_router = Router::new()
         .route("/fees/current", get(api::fees::current_fees))
         .route("/fees/history", get(api::fees::fee_history))
@@ -188,41 +203,10 @@ async fn main() {
             insights_engine: Some(insights_engine.clone()),
         }));
 
-    // Clone for metrics endpoint closure
-    let metrics_for_handler = app_metrics.clone();
-
-    let app = Router::new().route("/health", get(api::health::health));
-
-    let protected_routes = Router::new()
-        .route(
-            "/metrics",
-            get(move || {
-                let m = metrics_for_handler.clone();
-                async move {
-                    match m.render() {
-                        Ok(body) => axum::response::Response::builder()
-                            .status(200)
-                            .header(
-                                axum::http::header::CONTENT_TYPE,
-                                "text/plain; version=0.0.4",
-                            )
-                            .body(axum::body::Body::from(body))
-                            .unwrap(),
-                        Err(err) => {
-                            tracing::error!("Failed to render metrics: {}", err);
-                            axum::response::Response::builder()
-                                .status(500)
-                                .body(axum::body::Body::from("metrics error"))
-                                .unwrap()
-                        }
-                    }
-                }
-            }),
-        )
+    // Business routes that require optional API-key auth.
+    let api_routes = Router::new()
         .merge(fees_router)
-        .merge(api::insights::create_insights_router(
-            insights_engine.clone(),
-        ))
+        .merge(api::insights::create_insights_router(insights_engine.clone()))
         .merge(
             Router::new()
                 .route(
@@ -248,23 +232,66 @@ async fn main() {
                 .with_state(repository.clone()),
         );
 
-    let protected_routes = match config.api_key.clone() {
+    let api_routes = match config.api_key.clone() {
         Some(expected_key) => {
             tracing::info!("API key authentication is enabled for protected routes");
-            protected_routes.layer(axum::middleware::from_fn_with_state(
+            api_routes.layer(axum::middleware::from_fn_with_state(
                 Some(expected_key),
                 require_api_key,
             ))
         }
-        None => protected_routes,
+        None => api_routes,
     };
 
-    let app = app
-        .merge(protected_routes)
+    // /metrics: rate limited but NOT behind API-key auth (Prometheus scrapers
+    // should not need to know the API key).
+    let metrics_for_handler = app_metrics.clone();
+    let metrics_route = Router::new().route(
+        "/metrics",
+        get(move || {
+            let m = metrics_for_handler.clone();
+            async move {
+                match m.render() {
+                    Ok(body) => axum::response::Response::builder()
+                        .status(200)
+                        .header(
+                            axum::http::header::CONTENT_TYPE,
+                            "text/plain; version=0.0.4",
+                        )
+                        .body(axum::body::Body::from(body))
+                        .unwrap_or_else(|_| {
+                            axum::response::Response::builder()
+                                .status(500)
+                                .body(axum::body::Body::from("internal error"))
+                                .unwrap()
+                        }),
+                    Err(err) => {
+                        tracing::error!("Failed to render metrics: {}", err);
+                        axum::response::Response::builder()
+                            .status(500)
+                            .body(axum::body::Body::from("metrics error"))
+                            .unwrap_or_else(|_| {
+                                axum::response::Response::new(axum::body::Body::empty())
+                            })
+                    }
+                }
+            }
+        }),
+    );
+
+    // Rate-limited tier: metrics + business API routes.
+    let rate_limited = Router::new()
+        .merge(metrics_route)
+        .merge(api_routes)
         .layer(axum::middleware::from_fn_with_state(
             rate_limit_state,
             enforce_rate_limit,
-        ))
+        ));
+
+    // Final app: /health bypasses the rate limiter entirely.
+    let app = Router::new()
+        .route("/health", get(api::health::health))
+        .merge(rate_limited)
         .layer(cors);
 
     // ---- TCP listener ----

@@ -316,25 +316,4 @@ impl FeeInsightsEngine {
     pub fn get_last_update(&self) -> Option<DateTime<Utc>> {
         self.last_update
     }
-
-    /// Reset all components (useful for testing or maintenance)
-    pub fn reset(&mut self) -> Result<(), InsightsError> {
-        // Reset calculator by creating a new one
-        let average_config = AverageConfig::default();
-        self.calculator =
-            RollingAverageCalculator::new(average_config, self.config.time_windows.clone());
-
-        // Reset tracker
-        let extremes_config = ExtremesConfig::default();
-        self.tracker = ExtremesTracker::new(extremes_config);
-
-        // Reset detector
-        self.detector.clear_history();
-
-        // Reset update time
-        self.last_update = None;
-        self.last_insights = None;
-
-        Ok(())
-    }
 }

@@ -37,7 +37,7 @@ impl Percentile {
         let lo = rank.floor() as usize;
         let hi = rank.ceil() as usize;
         let frac = rank - lo as f64;
-        (sorted[lo] as f64 + frac * (sorted[hi] as f64 - sorted[lo] as f64)).round() as u64
+        (sorted[lo] as f64 + frac * (sorted[hi] as f64 - sorted[lo] as f64)).floor() as u64
     }
 
     /// Returns a full fee distribution summary for a sorted slice.

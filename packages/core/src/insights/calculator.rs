@@ -162,39 +162,4 @@ impl RollingAverageCalculator {
         })
     }
 
-    /// Get average for a specific time window
-    pub fn get_average_for_window(&self, window: &TimeWindow) -> Option<AverageResult> {
-        let buffer = self.windows.get(window)?;
-
-        if buffer.is_empty() {
-            return None;
-        }
-
-        let total_fee: u64 = buffer.iter().map(|point| point.fee_amount).sum();
-        let sample_count = buffer.len();
-        let average = total_fee as f64 / sample_count as f64;
-        let is_partial = sample_count < window.min_samples;
-
-        Some(AverageResult {
-            value: average,
-            sample_count,
-            is_partial,
-            calculated_at: Utc::now(),
-            time_window: window.clone(),
-        })
-    }
-
-    /// Get the number of data points in a specific time window
-    pub fn get_sample_count(&self, window: &TimeWindow) -> usize {
-        self.windows
-            .get(window)
-            .map(|buffer| buffer.len())
-            .unwrap_or(0)
-    }
-
-    /// Check if a time window has sufficient data for reliable calculations
-    pub fn has_sufficient_data(&self, window: &TimeWindow) -> bool {
-        let sample_count = self.get_sample_count(window);
-        sample_count >= window.min_samples
-    }
 }

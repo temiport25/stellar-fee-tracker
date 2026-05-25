@@ -303,8 +303,8 @@ mod tests {
         let config = ExtremesConfig::default();
         let tracker = ExtremesTracker::new(config);
 
-        // Should be created successfully
-        assert!(!tracker.has_current_data());
+        // A freshly-created tracker has no extremes yet.
+        assert!(tracker.get_current_extremes().is_err());
     }
 
     #[test]
@@ -933,9 +933,13 @@ mod tests {
     }
 
     #[test]
-    fn test_engine_reset_functionality() {
+    fn test_engine_processes_data_and_records_last_update() {
+        // Replaces the deleted reset() test — verifies that process_fee_data
+        // sets last_update and that a fresh engine has no last_update.
         let config = InsightsConfig::default();
         let mut engine = FeeInsightsEngine::new(config);
+
+        assert!(engine.get_last_update().is_none(), "fresh engine has no last_update");
 
         let now = Utc::now();
         let fee_data = vec![FeeDataPoint {
@@ -945,16 +949,7 @@ mod tests {
             ledger_sequence: 1,
         }];
 
-        // Process some data
         let _result = tokio_test::block_on(engine.process_fee_data(&fee_data));
-
-        // Reset the engine
-        let reset_result = engine.reset();
-        assert!(reset_result.is_ok());
-
-        // Verify reset worked
-        assert!(engine.get_last_update().is_none());
-        let insights = engine.get_current_insights();
-        assert_eq!(insights.rolling_averages.short_term.sample_count, 0);
+        assert!(engine.get_last_update().is_some(), "last_update set after processing");
     }
 }
