@@ -1,5 +1,5 @@
 ## Render Blueprint — Stellar Fee Tracker
-## Deploy: `render blueprint apply` or connect the repo in the Render dashboard.
+## Deploy: connect the repo in the Render dashboard → New → Blueprint
 ## https://render.com/docs/blueprint-spec
 
 services:
@@ -11,22 +11,20 @@ services:
     dockerContext: .
     plan: free
     healthCheckPath: /health
-    # Render injects PORT=10000; the binary falls back to PORT if API_PORT is unset.
+    # Render injects PORT=10000; the binary reads PORT as fallback for API_PORT.
+    # No disk on free tier — SQLite uses ephemeral container storage.
+    # Data resets on restart; Horizon history is refetched automatically.
     envVars:
       - key: STELLAR_NETWORK
         value: testnet
       - key: POLL_INTERVAL_SECONDS
         value: "30"
       - key: DATABASE_URL
-        value: sqlite:///data/stellar_fees.db
+        value: sqlite:///tmp/stellar_fees.db
       - key: RUST_LOG
         value: info
       - key: ALLOWED_ORIGINS
         value: "*"
-    disk:
-      name: stellar-data
-      mountPath: /data
-      sizeGB: 1
 
   # ── 2. Frontend — Next.js ───────────────────────────────────────────────────
   - type: web
@@ -39,12 +37,13 @@ services:
     envVars:
       - key: NEXT_PUBLIC_API_URL
         value: /api
-      - key: BACKEND_URL
-        # Next.js rewrites proxy /api/* → BACKEND_URL/*
+      - key: BACKEND_HOST
+        # "host" gives the bare hostname: stellar-fee-tracker-api.onrender.com
+        # next.config.ts prepends https:// so rewrites get a full URL.
         fromService:
           name: stellar-fee-tracker-api
           type: web
-          property: url
+          property: host
       - key: NEXT_PUBLIC_STELLAR_NETWORK
         value: testnet
       - key: NODE_ENV
@@ -52,7 +51,7 @@ services:
 
   # ── 3. Keep-alive cron — prevents free-tier cold starts ─────────────────────
   # Free-tier web services sleep after 15 min of inactivity.
-  # This pings /health every 14 minutes to keep the backend warm.
+  # Ping /health every 14 minutes to keep the backend warm.
   - type: cron
     name: stellar-keep-alive
     schedule: "*/14 * * * *"
@@ -60,15 +59,16 @@ services:
     buildCommand: "true"
     startCommand: >-
       node -e "
-        const url = process.env.BACKEND_URL + '/health';
+        const host = process.env.BACKEND_HOST;
+        const url = 'https://' + host + '/health';
         console.log('Pinging', url);
         fetch(url)
           .then(r => { console.log('Status:', r.status); if (!r.ok) process.exit(1); })
           .catch(e => { console.error(e.message); process.exit(1); });
       "
     envVars:
-      - key: BACKEND_URL
+      - key: BACKEND_HOST
         fromService:
           name: stellar-fee-tracker-api
           type: web
-          property: url
+          property: host
