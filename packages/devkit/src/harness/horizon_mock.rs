@@ -206,10 +206,10 @@ pub async fn serve(mock: std::sync::Arc<HorizonMock>, port: u16) -> std::io::Res
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .map_err(|e| std::io::Error::other(e))?;
+        .map_err(std::io::Error::other)?;
     axum::serve(listener, app)
         .await
-        .map_err(|e| std::io::Error::other(e))
+        .map_err(std::io::Error::other)
 }
 
 /// Minimal pseudo-random float in [0.0, 1.0) using system time as entropy.
