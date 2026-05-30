@@ -28,6 +28,27 @@ impl ReplayArgs {
             self.from,
             self.to
         );
+    /// Path to the SQLite database file containing recorded fee data.
+    pub db: PathBuf,
+    /// Playback speed multiplier (1.0 = real-time, 10.0 = 10x faster).
+    #[arg(long, default_value = "1.0")]
+    pub speed: f32,
+}
+
+impl ReplayArgs {
+    /// Replays fee records at the specified speed multiplier.
+    pub fn run(&self) {
+        eprintln!(
+            "Replaying from {} at {:.1}x speed",
+            self.db.display(),
+            self.speed
+        );
+}
+
+impl ReplayArgs {
+    /// Replays fee records from the database to stdout as a JSON stream.
+    pub fn run(&self) {
+        eprintln!("Replaying fee records from {}", self.db.display());
         println!("[]");
     }
 }
