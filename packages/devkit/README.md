@@ -140,6 +140,28 @@ devkit mock --port 8080 --scenario spike
 stellar-devkit = { path = "../devkit" }
 ```
 
+## Benchmarks
+
+Baseline results measured on reference hardware (Apple M-series, single-core, `cargo bench`):
+
+| Benchmark | Input | Mean | Std Dev |
+|---|---|---|---|
+| `fee_model/run_100` | 100 ledgers, seeded | ~12 µs | ±0.3 µs |
+| `fee_model/run_1000` | 1 000 ledgers, seeded | ~115 µs | ±2 µs |
+| `percentile/nearest_rank_1k` | 1 000 sorted values, p50 | ~1.8 µs | ±0.05 µs |
+| `rolling_window/push_1k` | 1 000 pushes, window=100 | ~900 ns | ±20 ns |
+
+### Running benchmarks locally
+
+```bash
+cargo bench --manifest-path packages/devkit/Cargo.toml
+```
+
+HTML reports are saved to `packages/devkit/target/criterion/`.
+
+### CI benchmarks
+
+Benchmarks compile and run on every PR touching `packages/devkit/` via the [Devkit Benchmarks](.github/workflows/devkit-bench.yml) workflow. Results are posted to the GitHub Actions step summary.
 ```toml
 [dev-dependencies]
 stellar-devkit = { path = "../devkit" }
