@@ -90,7 +90,7 @@ fn baseline_values_in_range() {
     let fees = FeeModel::baseline(50);
     for fee in &fees {
         assert!(
-            *fee >= 100.0 && *fee <= 1_000_000.0,
+            (100.0..=1_000_000.0).contains(fee),
             "fee out of range: {fee}"
         );
     }
@@ -281,7 +281,7 @@ fn congestion_score_result_in_0_1() {
         spike_count: 5,
     };
     let score = congestion_score(&input);
-    assert!(score >= 0.0 && score <= 1.0, "score {score} out of [0,1]");
+    assert!((0.0..=1.0).contains(&score), "score {score} out of [0,1]");
 }
 
 #[test]
