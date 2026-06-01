@@ -3,7 +3,10 @@ use stellar_devkit::simulation::fee_model::{FeeModel, FeeModelConfig};
 
 #[test]
 fn export_csv_has_correct_header() {
-    let config = FeeModelConfig { seed: Some(1), ..Default::default() };
+    let config = FeeModelConfig {
+        seed: Some(1),
+        ..Default::default()
+    };
     let mut model = FeeModel::new(config);
     let points = model.generate(5, 0);
     let csv = Export::to_csv(&points);
@@ -15,7 +18,10 @@ fn export_csv_has_correct_header() {
 
 #[test]
 fn export_csv_row_count_matches_input() {
-    let config = FeeModelConfig { seed: Some(2), ..Default::default() };
+    let config = FeeModelConfig {
+        seed: Some(2),
+        ..Default::default()
+    };
     let mut model = FeeModel::new(config);
     let points = model.generate(10, 0);
     let csv = Export::to_csv(&points);
@@ -30,7 +36,10 @@ fn export_csv_row_count_matches_input() {
 
 #[test]
 fn export_csv_columns_are_parseable() {
-    let config = FeeModelConfig { seed: Some(3), ..Default::default() };
+    let config = FeeModelConfig {
+        seed: Some(3),
+        ..Default::default()
+    };
     let mut model = FeeModel::new(config);
     let points = model.generate(1, 1_000);
     let csv = Export::to_csv(&points);

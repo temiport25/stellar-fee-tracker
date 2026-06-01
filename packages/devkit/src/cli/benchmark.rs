@@ -1,4 +1,4 @@
-﻿/// Runs benchmarks against the fee tracker pipeline.
+/// Runs benchmarks against the fee tracker pipeline.
 pub struct Benchmark;
 
 impl Benchmark {
@@ -27,7 +27,12 @@ impl Benchmark {
     /// Run all analysis benchmarks and print a summary table.
     pub fn run_all(fees: &[f64], window: usize, alpha: f64) {
         println!("=== Benchmark Results ===");
-        println!("Input: {} data points, window={}, alpha={}", fees.len(), window, alpha);
+        println!(
+            "Input: {} data points, window={}, alpha={}",
+            fees.len(),
+            window,
+            alpha
+        );
         println!();
         Self::compare_spike(fees, window, alpha);
     }

@@ -40,12 +40,16 @@ pub struct FeeGenerator {
 impl FeeGenerator {
     /// Create a generator with the given seed.
     pub fn new(seed: u64) -> Self {
-        Self { rng: SmallRng::seed_from_u64(seed) }
+        Self {
+            rng: SmallRng::seed_from_u64(seed),
+        }
     }
 
     /// Generate `n` fee values in the range [min_fee, max_fee].
     pub fn generate(&mut self, n: usize, min_fee: u64, max_fee: u64) -> Vec<u64> {
-        (0..n).map(|_| self.rng.gen_range(min_fee..=max_fee)).collect()
+        (0..n)
+            .map(|_| self.rng.gen_range(min_fee..=max_fee))
+            .collect()
     }
 
     /// Generate a flat sequence of `n` identical fees (useful for baseline tests).

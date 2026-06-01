@@ -1,4 +1,4 @@
-﻿//! Property-style tests for percentile functions.
+//! Property-style tests for percentile functions.
 //! Verifies invariants on arbitrary fee sequences without external proptest crate.
 
 use stellar_devkit::analysis::percentile::Percentile;

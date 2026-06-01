@@ -1,4 +1,4 @@
-﻿//! Property-style tests for spike classifier — no false positives on flat sequences.
+//! Property-style tests for spike classifier — no false positives on flat sequences.
 
 use stellar_devkit::analysis::spike_classifier::SpikeClassifier;
 

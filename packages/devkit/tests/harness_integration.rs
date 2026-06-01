@@ -11,12 +11,15 @@ fn normal_scenario_fee_stats_returns_mode_100() {
     let body = mock.fee_stats_payload().expect("fee_stats_payload failed");
     assert!(!body.is_empty(), "response body must not be empty");
 
-    let json: serde_json::Value =
-        serde_json::from_str(&body).expect("response is not valid JSON");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("response is not valid JSON");
     let mode = json["fee_stats"]["fee_charged"]["mode"]
         .as_str()
         .expect("fee_charged.mode missing");
-    assert_eq!(mode, "100", "expected fee_charged.mode == \"100\", got {}", mode);
+    assert_eq!(
+        mode, "100",
+        "expected fee_charged.mode == \"100\", got {}",
+        mode
+    );
 }
 
 /// Spin up with congested.json. Assert fee_charged.p95 parses to a value > 100000.
@@ -26,8 +29,7 @@ fn congested_scenario_fee_stats_p95_exceeds_100k() {
     let mock = HorizonMock::new("congested").with_scenario_path(path);
 
     let body = mock.fee_stats_payload().expect("fee_stats_payload failed");
-    let json: serde_json::Value =
-        serde_json::from_str(&body).expect("response is not valid JSON");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("response is not valid JSON");
 
     let p95: u64 = json["fee_stats"]["fee_charged"]["p95"]
         .as_str()
